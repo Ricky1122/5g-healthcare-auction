@@ -1,0 +1,51 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ipynb_checkpoints/
+data/processed/
+data/processed_eicu/
+data/processed_mimic/
+data/eicu/
+data/mimic/
+data/Synthetic_patient-HealthCare-Monitoring_dataset.csv
+artifacts/
+*.pt
+*.pth
+*.ckpt
+# regenerable per-user / GBDT-train dumps (keep the small W×K tables)
+data/processed_w2k3/customer_assignment.csv
+data/processed_w2k3/customer_rates.csv
+data/processed_w2k3/criticality_scores.csv
+data/processed_w2k3/criticality_scores.npz
+data/processed_w2k3/reluctance/train_table.csv
+data/processed_w2k3/reluctance/train_slots.npz
+data/processed_w2k3/reluctance/stress_slot.npz
+# 3×2 per-user dumps and leftover optimizer traces
+final result/market/customer_assignment.csv
+final result/market/customer_rates.csv
+final result/market/criticality_scores.csv
+final result/market/patients_all.csv
+final result/market/auction_clearing.npz
+final result/market/rho_wk.npz
+final result/figures/trace_delta_*.npz
+final result/preference_sweep/*N10*
+# third-party paper PDF
+*.pdf
+# Local-only time-varying reluctance (kept on disk, not GitHub)
+report/Dynamic-Reluctance-Proposal.md
+report/README_dynamic_reluctance_for_mentor.md
+src/10_reluctance_figures.py
+report/current/fig_omega_hat.png
+report/current/fig_omega_star.png
+report/current/fig_predictor_fit.png
+report/current/fig_stress_omega.png
+report/current/fig_stress_rate_bs1.png
+report/current/fig_stress_rate_per_bs.png
+report/current/fig_welfare_compare.png
+report/current/fig_bid_change.png
+report/current/fig_rate_change.png
+report/archive/4x3_eicu/figR1_omega.png
+report/archive/4x3_eicu/figR2_rate_bid.png
+report/archive/4x3_eicu/figR3_stress_cell.png
+report/archive/4x3_eicu/figR4_predictor_fit.png
