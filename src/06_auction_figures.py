@@ -48,12 +48,27 @@ DELTA_STYLE = {
     0.004: dict(color="#2ca02c", marker="+", linestyle="-", label=r"$\Delta=0.004$"),
     0.006: dict(color="#8c564b", marker="v", linestyle="--", label=r"$\Delta=0.006$"),
     0.008: dict(color="#1f77b4", marker="o", linestyle="-.", label=r"$\Delta=0.008$"),
+    0.01: dict(color="#2ca02c", marker="+", linestyle="-", label=r"$\Delta=0.010$"),
+    0.012: dict(color="#2ca02c", marker="+", linestyle="-", label=r"$\Delta=0.012$"),
+    0.015: dict(color="#2ca02c", marker="+", linestyle="-", label=r"$\Delta=0.015$"),
+    0.018: dict(color="#2ca02c", marker="+", linestyle="-", label=r"$\Delta=0.018$"),
+    0.025: dict(color="#8c564b", marker="v", linestyle="--", label=r"$\Delta=0.025$"),
+    0.028: dict(color="#2ca02c", marker="+", linestyle="-", label=r"$\Delta=0.028$"),
+    0.032: dict(color="#8c564b", marker="v", linestyle="--", label=r"$\Delta=0.032$"),
     0.034: dict(color="#2ca02c", marker="+", linestyle="-", label=r"$\Delta=0.034$"),
+    0.035: dict(color="#8c564b", marker="v", linestyle="--", label=r"$\Delta=0.035$"),
+    0.038: dict(color="#8c564b", marker="v", linestyle="--", label=r"$\Delta=0.038$"),
     0.04: dict(color="#8c564b", marker="v", linestyle="--", label=r"$\Delta=0.040$"),
     0.046: dict(color="#1f77b4", marker="o", linestyle="-.", label=r"$\Delta=0.046$"),
+    0.05: dict(color="#1f77b4", marker="o", linestyle="-.", label=r"$\Delta=0.050$"),
+    0.055: dict(color="#1f77b4", marker="o", linestyle="-.", label=r"$\Delta=0.055$"),
     0.02: dict(color="#2ca02c", marker="+", linestyle="-", label=r"$\Delta=0.02$"),
     0.06: dict(color="#1f77b4", marker="o", linestyle="-.", label=r"$\Delta=0.06$"),
+    0.07: dict(color="#1f77b4", marker="o", linestyle="-.", label=r"$\Delta=0.070$"),
+    0.075: dict(color="#1f77b4", marker="o", linestyle="-.", label=r"$\Delta=0.075$"),
     0.08: dict(color="#ff7f0e", marker="s", linestyle=":", label=r"$\Delta=0.08$"),
+    0.085: dict(color="#1f77b4", marker="o", linestyle="-.", label=r"$\Delta=0.085$"),
+    0.09: dict(color="#1f77b4", marker="o", linestyle="-.", label=r"$\Delta=0.090$"),
 }
 
 _FALLBACK_DELTA = (
@@ -90,15 +105,34 @@ def _trace_style(base: dict, index: int) -> dict:
     return style
 
 
+def _nice_end(raw: int, pad: int = 0) -> int:
+    raw = int(raw) + int(pad)
+    step = 50 if raw >= 200 else 20 if raw >= 100 else 10
+    return int(max(step, np.ceil(raw / step) * step))
+
+
 def _axis_end(traj: dict[float, dict], tol: float = 1e-3, pad: int = 30) -> int:
     """Show the full rise through lock-in, then stop so the tail does not flatten the story."""
     hits = []
     for tr in traj.values():
         ok = np.where(np.asarray(tr["gap"]) < tol)[0]
         hits.append(int(ok[0]) + 1 if len(ok) else int(tr["n"]))
-    raw = max(hits) + pad
-    step = 50 if raw >= 200 else 20 if raw >= 100 else 10
-    return int(max(step, np.ceil(raw / step) * step))
+    return _nice_end(max(hits), pad)
+
+
+def _sw_axis_end(
+    traj: dict[float, dict], max_sw: float | None = None, frac: float = 0.997, pad: int = 40
+) -> int:
+    """Crop Fig. 2 to when welfare actually arrives, not to the later gap tail."""
+    finals = [float(tr["sw_matched"][-1]) for tr in traj.values()]
+    ref = max([x for x in (*finals, max_sw or 0.0) if x is not None] or [1.0])
+    hits = []
+    for tr in traj.values():
+        sw = np.asarray(tr["sw_matched"], dtype=np.float64)
+        target = frac * max(ref, float(sw[-1]))
+        ok = np.where(sw >= target)[0]
+        hits.append(int(ok[0]) + 1 if len(ok) else int(tr["n"]))
+    return _nice_end(max(hits), pad)
 
 
 def _tick_step(xmax: int) -> int:
@@ -147,9 +181,10 @@ def _pick_trace(traj: dict[float, dict]) -> dict:
 
 
 def _style_for_delta(delta: float) -> dict:
-    if delta in DELTA_STYLE:
-        return dict(DELTA_STYLE[delta])
-    style = dict(_FALLBACK_DELTA[hash(delta) % len(_FALLBACK_DELTA)])
+    key = round(float(delta), 3)
+    if key in DELTA_STYLE:
+        return dict(DELTA_STYLE[key])
+    style = dict(_FALLBACK_DELTA[hash(key) % len(_FALLBACK_DELTA)])
     style["label"] = rf"$\Delta={delta:g}$"
     return style
 
@@ -483,29 +518,42 @@ def generate_figures(
     copy_to_report: bool = True,
     deltas: tuple[float, ...] | None = None,
     pi_init: float | None = None,
+    fig345_delta: float | None = None,
 ) -> Path:
     processed_dir = Path(processed_dir or DEFAULT_PROCESSED)
     figdir = Path(figdir or DEFAULT_FIGDIR)
     figdir.mkdir(parents=True, exist_ok=True)
+    for stale in figdir.glob("trace_delta_*.npz"):
+        stale.unlink()
     opt = load_step("optimizer")
     mkt = _load_market(processed_dir, opt, omega_path=omega_path)
     print(
         f"[figures] market  BS x HSP = {mkt['rho'].shape}  "
         f"HSP={mkt['hsp_names']}  supply={mkt['R_w'].sum():.1f} Mbps"
     )
+    used = tuple(deltas or DELTAS)
     traj = {}
-    for delta in deltas or DELTAS:
+    for delta in used:
         tr = run_trajectory(mkt, opt, delta=delta, max_iter=max_iter, seed=seed, pi_init=pi_init)
         traj[delta] = tr
         print(
             f"[figures] Delta={delta:.3f}  iters={tr['n']}  "
             f"SW={tr['sw_matched'][-1]:.3f}  gap={tr['gap'][-1]:.3e}"
         )
-    global AXIS_ITERS
-    AXIS_ITERS = _axis_end(traj)
-    print(f"[figures] axis 0-{AXIS_ITERS}  (markers every {_mark_period()})")
+    global AXIS_ITERS, FIG345_DELTA
+    if fig345_delta is not None:
+        FIG345_DELTA = float(fig345_delta)
+    elif FIG345_DELTA not in traj:
+        FIG345_DELTA = used[len(used) // 2]
+    official = _official_welfare(processed_dir)
+    sw_end = _sw_axis_end(traj, official)
+    gap_end = _axis_end(traj)
     _ieee_rc()
-    fig_convergence(traj, figdir, max_sw=_official_welfare(processed_dir))
+    AXIS_ITERS = sw_end
+    print(f"[figures] fig2 axis 0-{AXIS_ITERS}  (markers every {_mark_period()})")
+    fig_convergence(traj, figdir, max_sw=official)
+    AXIS_ITERS = gap_end
+    print(f"[figures] fig3-5 axis 0-{AXIS_ITERS}  (markers every {_mark_period()})")
     fig_gap(traj, figdir)
     fig_bs_bids(traj, figdir)
     fig_hsp_bids(traj, figdir)

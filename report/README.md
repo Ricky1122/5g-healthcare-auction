@@ -24,7 +24,7 @@ IEEE-style draft: *Efficient Resource Allocation and Payment Scheme for 5G-based
 Older 4×3 / MIMIC plots: `report/archive/`.
 
 Mentor notes (not in the IEEE draft):
-- `README_bid_privacy_for_mentor.md` — why PRE cannot hide bids; SOTA ranking
+- `README_bid_privacy_for_mentor.md` — paper-2 scoping: TPE-blind market, price-path leak, two-tier design
 
 ```bash
 cd report

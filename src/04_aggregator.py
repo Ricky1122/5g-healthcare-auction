@@ -44,6 +44,7 @@ class AggregatorConfig:
     area_m: float = 2000.0
     seed: int = 42
     scores_name: str = "criticality_scores.csv"
+    hsp_ratio: tuple[int, ...] | None = None
 
     def __post_init__(self) -> None:
         self.processed_dir = Path(self.processed_dir)
@@ -86,10 +87,36 @@ def associate_bs(xy: np.ndarray, bs_xy: np.ndarray) -> tuple[np.ndarray, np.ndar
     return bs_id, serving_dist, serving_rsrp
 
 
-def assign_hsp(n_users: int, n_hsp: int, seed: int) -> np.ndarray:
-    """Split users at random across competing HSPs. No disease / specialty map."""
+def assign_hsp(
+    n_users: int,
+    n_hsp: int,
+    seed: int,
+    ratio: tuple[int, ...] | None = None,
+) -> np.ndarray:
+    """Split users at random across competing HSPs. No disease / specialty map.
+
+    ``ratio`` is a length-``n_hsp`` share vector (e.g. (5, 4, 3)). ``None`` is uniform.
+    """
     rng = np.random.default_rng(seed + 7)
-    return rng.integers(0, n_hsp, size=int(n_users), dtype=np.int64)
+    n = int(n_users)
+    if ratio is None:
+        return rng.integers(0, n_hsp, size=n, dtype=np.int64)
+    weights = np.asarray(ratio, dtype=np.float64)
+    if weights.size != n_hsp:
+        raise ValueError(f"hsp_ratio length {weights.size} != n_hsp={n_hsp}")
+    if float(weights.sum()) <= 0:
+        raise ValueError("hsp_ratio must sum to a positive value")
+    raw = n * weights / weights.sum()
+    counts = np.floor(raw).astype(np.int64)
+    leftover = n - int(counts.sum())
+    order = np.argsort(-(raw - counts))
+    for i in range(leftover):
+        counts[order[i % len(counts)]] += 1
+    labels = np.concatenate(
+        [np.full(int(c), i, dtype=np.int64) for i, c in enumerate(counts)]
+    )
+    rng.shuffle(labels)
+    return labels
 
 
 def aggregate_links(
@@ -181,7 +208,7 @@ def run_aggregator(cfg: AggregatorConfig | None = None) -> dict[str, Path]:
     bs_xy = place_base_stations(cfg.n_bs, cfg.area_m)
     xy = place_customers(n, cfg.area_m, cfg.seed)
     bs_id, dist_m, rsrp_dbm = associate_bs(xy, bs_xy)
-    hsp_id = assign_hsp(n, cfg.n_hsp, cfg.seed)
+    hsp_id = assign_hsp(n, cfg.n_hsp, cfg.seed, ratio=cfg.hsp_ratio)
     c = customers["criticality"].to_numpy(dtype=np.float64)
 
     c_wk, n_wk, mean_wk = aggregate_links(bs_id, hsp_id, c, cfg.n_bs, cfg.n_hsp)
@@ -251,7 +278,10 @@ def run_aggregator(cfg: AggregatorConfig | None = None) -> dict[str, Path]:
         "rho_hsp": prefs["rho_hsp"].tolist(),
         "rho_bs": prefs["rho_bs"].tolist(),
         "empty_links": int((n_wk == 0).sum()),
-        "config": {k: (str(v) if isinstance(v, Path) else v) for k, v in asdict(cfg).items()},
+        "config": {
+            k: (str(v) if isinstance(v, Path) else list(v) if isinstance(v, tuple) else v)
+            for k, v in asdict(cfg).items()
+        },
     }
     summary_path = cfg.artifact_dir / "aggregator_summary.json"
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")

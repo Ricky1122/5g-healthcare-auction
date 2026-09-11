@@ -5,7 +5,7 @@ B.Tech project pipeline that couples **LSTM vital-sign forecasting** with a **ga
 **Paper 1 (current):** eICU-CRD Demo, LSTM + NEWS2 fusion, **max-normalized** ρ, **constant reluctance** from one radio snapshot, **r_k^max = 5 Mbps** per cell.
 
 - Draft 2 HSP × 3 BS tables: `data/processed_w2k3/`, `report/main.tex`.
-- Final 3 HSP × 2 BS market and figures: `final result/`.
+- Final 3 HSP × 2 BS market and figures: `final result/` (official split **5:4:3**, so preference sits in high / mid / low bands).
 
 Time-varying (dynamic) reluctance is **not** in this repository.
 
@@ -321,7 +321,8 @@ Paper-1 market tables (eICU already fused; skip LSTM if `processed_w2k3` exists)
 .\.venv\Scripts\python src\08_economic_figures.py --processed-dir data\processed_w2k3 --figdir artifacts\w2k3\figures --omega-path data\processed_w2k3\reluctance\omega_frozen.npz
 ```
 
-3 HSP × 2 BS market (writes `final result/` only; does not overwrite paper-1 `data/processed_w2k3`):
+3 HSP × 2 BS market (writes `final result/` only; does not overwrite paper-1 `data/processed_w2k3`).
+Official patient split is **5:4:3**:
 
 ```bash
 .\.venv\Scripts\python src\11_w3k2_final.py
@@ -349,7 +350,7 @@ Paper-1 market tables (eICU already fused; skip LSTM if `processed_w2k3` exists)
 | `data/processed_w2k3/reluctance/omega_frozen.npz` | Constant ω |
 | `data/processed_w2k3/optimizer_summary.json` | Rates, payments, duals, welfare 10.65 |
 | `report/main.tex` | Paper-1 draft |
-| `report/README_bid_privacy_for_mentor.md` | Why PRE cannot hide bids |
+| `report/README_bid_privacy_for_mentor.md` | Paper-2 scoping: TPE-blind market, price-path leak, two-tier design |
 
 
 ---

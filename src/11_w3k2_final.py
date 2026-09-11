@@ -36,6 +36,12 @@ N_HSP = 3
 HSP_NAMES = ("HSP1", "HSP2", "HSP3")
 BS_NAMES = ("BS1", "BS2")
 HSP_COLOR = ("#2ca02c", "#1f77b4", "#d62728")
+MARKET_RATIO = (5, 4, 3)
+# Fig. 2: widely spaced steps so welfare locks at visibly different iterations.
+FIG_DELTAS = (0.028, 0.040, 0.085)
+FIG_PI_INIT = 0.50
+FIG_MAX_ITER = 450
+FIG345_DELTA = 0.040
 # Example ratios from the user, applied to the FULL cohort (not 10 people).
 FULL_RATIOS = (
     (1, 1, 1),
@@ -157,13 +163,11 @@ def prepare_market_dir() -> None:
         shutil.copy2(meta, MARKET_DIR / "patients_all.csv")
 
 
-def run_full_market() -> dict:
+def run_clearing() -> Path:
     prepare_market_dir()
     agg = load_step("aggregator")
     rel = load_step("reluctance")
     opt = load_step("optimizer")
-    figs = load_step("auction_figures")
-    econ = load_step("economic_figures")
 
     agg.run_aggregator(
         agg.AggregatorConfig(
@@ -173,6 +177,7 @@ def run_full_market() -> dict:
             n_hsp=N_HSP,
             area_m=AREA_M,
             seed=SEED,
+            hsp_ratio=MARKET_RATIO,
         )
     )
     omega_path = rel.write_frozen_omega(MARKET_DIR, MARKET_DIR / "reluctance", seed=SEED)
@@ -189,15 +194,22 @@ def run_full_market() -> dict:
             pi_init=0.32,
         )
     )
+    return omega_path
+
+
+def run_market_figures(omega_path: Path) -> None:
+    figs = load_step("auction_figures")
+    econ = load_step("economic_figures")
     FIG_DIR.mkdir(parents=True, exist_ok=True)
     figs.generate_figures(
         processed_dir=MARKET_DIR,
         figdir=FIG_DIR,
-        max_iter=450,
+        max_iter=FIG_MAX_ITER,
         omega_path=omega_path,
         copy_to_report=False,
-        deltas=(0.034, 0.040, 0.046),
-        pi_init=0.30,
+        deltas=FIG_DELTAS,
+        pi_init=FIG_PI_INIT,
+        fig345_delta=FIG345_DELTA,
     )
     econ.generate_economic_figures(
         processed_dir=MARKET_DIR,
@@ -207,6 +219,11 @@ def run_full_market() -> dict:
         omega_path=omega_path,
         copy_to_report=False,
     )
+
+
+def run_full_market() -> dict:
+    omega_path = run_clearing()
+    run_market_figures(omega_path)
     return {"omega_path": omega_path}
 
 
@@ -218,7 +235,7 @@ def load_pool(agg) -> dict:
     xy = agg.place_customers(n, AREA_M, SEED)
     bs_xy = agg.place_base_stations(N_BS, AREA_M)
     bs_id, dist_m, rsrp = agg.associate_bs(xy, bs_xy)
-    hsp_id = agg.assign_hsp(n, N_HSP, SEED)
+    hsp_id = agg.assign_hsp(n, N_HSP, SEED, ratio=MARKET_RATIO)
     return {
         "customers": customers,
         "crit": crit,
@@ -266,7 +283,10 @@ def run_preference_sweep(agg, pool: dict) -> dict:
     full_rows = []
     for ratio in FULL_RATIOS:
         counts = counts_from_ratio(n_all, ratio)
-        hsp_id = assign_counts(n_all, counts, seed=SEED + 21 * sum(ratio) + ratio[0])
+        if tuple(ratio) == MARKET_RATIO:
+            hsp_id = pool["hsp_id"]
+        else:
+            hsp_id = assign_counts(n_all, counts, seed=SEED + 21 * sum(ratio) + ratio[0])
         pack = rho_for_subset(agg, pool["crit"], pool["xy"], pool["bs_xy"], full_index, hsp_id)
         full_rows.append(_record_pack(n_all, counts, pack, ratio=ratio))
     full_df = pd.DataFrame(full_rows)
@@ -604,8 +624,9 @@ def write_allocation_tables(pool: dict, agg) -> dict:
         "how": (
             "Each eICU vital window is one uplink user. Users are placed uniformly "
             "on a 2 km × 2 km map (seed 42), associated to the stronger of two "
-            "cells by max RSRP, and subscribed to HSP1/HSP2/HSP3 by an independent "
-            "uniform draw (seed 42+7). No disease-to-hospital map."
+            "cells by max RSRP, and subscribed to HSP1/HSP2/HSP3 in a 5:4:3 "
+            "share (seed 42+7) so the three hospitals sit in different preference "
+            "bands. No disease-to-hospital map."
         ),
         "users_per_hsp": {HSP_NAMES[j]: int(users_hsp[j]) for j in range(N_HSP)},
         "users_per_bs": {BS_NAMES[i]: int(load_bs[i]) for i in range(N_BS)},
@@ -620,6 +641,10 @@ def write_allocation_tables(pool: dict, agg) -> dict:
     (FINAL_DIR / "patient_allocation.json").write_text(json.dumps(alloc, indent=2), encoding="utf-8")
     pd.DataFrame(n_wk, index=BS_NAMES, columns=HSP_NAMES).to_csv(FINAL_DIR / "N_wk.csv")
     pd.DataFrame(c_wk, index=BS_NAMES, columns=HSP_NAMES).to_csv(FINAL_DIR / "C_wk.csv")
+    for name in ("rho_wk.csv", "omega_wk.csv", "optimizer_summary.json"):
+        src = MARKET_DIR / name
+        if src.exists():
+            shutil.copy2(src, FINAL_DIR / name)
     return alloc
 
 
@@ -639,14 +664,16 @@ def write_readmes(alloc: dict, sweep: pd.DataFrame, scale: pd.DataFrame) -> None
         if row.empty:
             continue
         r = row.iloc[0]
+        tag = " (official market)" if ratio == "5:4:3" else ""
         examples.append(
-            f"- **{ratio}** -> {int(r['n_hsp1'])}/{int(r['n_hsp2'])}/{int(r['n_hsp3'])} users: "
+            f"- **{ratio}**{tag} -> {int(r['n_hsp1'])}/{int(r['n_hsp2'])}/{int(r['n_hsp3'])} users: "
             f"mean rho = HSP1 {r['mean_rho_HSP1']:.3f}, "
             f"HSP2 {r['mean_rho_HSP2']:.3f}, HSP3 {r['mean_rho_HSP3']:.3f}"
         )
 
     users = alloc["users_per_hsp"]
     nwk = alloc["N_wk"]
+    delta_txt = ", ".join(f"{x:.3f}" for x in FIG_DELTAS)
     (FINAL_DIR / "README.md").write_text(
         f"""# Final result — 3 HSPs × 2 base stations
 
@@ -661,7 +688,7 @@ Paper-1 files under `data/processed_w2k3/` and `report/` are unchanged (that run
 
 There are **{alloc["n_users"]}** uplink users (eICU Demo vital windows). Unique ICU stays: **{alloc["n_unique_stays"]}**.
 
-### Users per hospital (random 3-way split, seed 42)
+### Users per hospital (5:4:3 split, seed 42)
 
 | HSP | Users | Share |
 | --- | ---: | ---: |
@@ -681,6 +708,14 @@ A user on the left half of the map usually hears **BS1** more strongly; the righ
 Map (1.6k-user sample): `preference_sweep/fig_allocation_map.png`.
 
 ## Full-market preference and clearing
+
+The **official 3 x 2 market is the 5:4:3 split**, not a balanced 1:1:1 draw.
+That puts HSP1 / HSP2 / HSP3 in high / mid / low preference bands after
+max-normalization, so the same auction is shown to clear when rho is not
+all near 1.
+
+Fig. 2 uses three subgradient steps {delta_txt} from a common cold start
+so social welfare locks at visibly different iterations.
 
 Preference matrix (`market/rho_wk.csv`):
 
@@ -706,7 +741,9 @@ Auction traces: `figures/fig2_convergence.png` … `fig8_preference_vs_payment.p
 
 ## Preference vs how many patients each HSP has
 
-The **real market uses all {alloc["n_users"]} windows** ({alloc["n_unique_stays"]} ICU stays).
+The **real market uses all {alloc["n_users"]} windows** ({alloc["n_unique_stays"]} ICU stays)
+and the **5:4:3 split**. Other ratios below are a sensitivity check that rho still
+tracks headcount when the three hospitals sit in other preference bands.
 "10 patients as 5-4-3 or 7-2-1" was only an example of *shares*. Those ratios are now applied to the full cohort (5:4:3 -> about 31k / 25k / 19k users).
 
 Preference rho = (C / mean C) * (1 + mean c), then divided by the largest of the six links.
@@ -750,6 +787,7 @@ python src/11_w3k2_final.py
 
     (MARKET_DIR / "README.md").write_text(
         "W=3 HSP x K=2 BS clearing at 5 Mbps with frozen omega.\n"
+        "Official patient split is 5:4:3 (HSP1/HSP2/HSP3).\n"
         "Tables: rho_wk.csv, omega_wk.csv, N_wk.csv, C_wk.csv, d_wk.csv, payment_wk.csv,\n"
         "optimizer_summary.json. Assignment of all 74454 users: customer_assignment.csv.\n",
         encoding="utf-8",
@@ -773,11 +811,18 @@ Columns `rho_BS*_HSP*` are max-normalized preference.
 def main() -> None:
     FINAL_DIR.mkdir(parents=True, exist_ok=True)
     print("[final] W=3 HSPs, K=2 BSs ->", FINAL_DIR)
-    skip_market = "--sweep-only" in sys.argv and (MARKET_DIR / "optimizer_summary.json").exists()
-    if skip_market:
-        print("[final] skipping market (already cleared)")
+    have_clear = (MARKET_DIR / "optimizer_summary.json").exists()
+    skip_clear = ("--sweep-only" in sys.argv or "--figures-only" in sys.argv) and have_clear
+    skip_figures = "--sweep-only" in sys.argv and have_clear
+    if skip_clear:
+        print("[final] skipping clearing (already done)")
+        omega_path = MARKET_DIR / "reluctance" / "omega_frozen.npz"
     else:
-        run_full_market()
+        omega_path = run_clearing()
+    if skip_figures:
+        print("[final] skipping auction figures")
+    else:
+        run_market_figures(omega_path)
     agg = load_step("aggregator")
     pool = load_pool(agg)
     alloc = write_allocation_tables(pool, agg)
