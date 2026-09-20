@@ -29,10 +29,20 @@ if str(ROOT) not in sys.path:
 DEFAULT_PROCESSED_DIR = ROOT / "data" / "processed"
 DEFAULT_ARTIFACT_DIR = ROOT / "artifacts"
 
-HSP_NAMES: tuple[str, ...] = ("HSP1", "HSP2", "HSP3")
 EPS = 1e-9
 FC_GHZ = 3.5  # 5G mid-band
 TX_POWER_DBM = 30.0
+
+
+def hsp_labels(n: int) -> list[str]:
+    return [f"HSP{i + 1}" for i in range(int(n))]
+
+
+def bs_labels(n: int) -> list[str]:
+    return [f"BS{i + 1}" for i in range(int(n))]
+
+
+HSP_NAMES: tuple[str, ...] = tuple(hsp_labels(12))
 
 
 @dataclass
@@ -51,8 +61,6 @@ class AggregatorConfig:
         self.artifact_dir = Path(self.artifact_dir)
         if self.n_bs < 1 or self.n_hsp < 1:
             raise ValueError("n_bs and n_hsp must be >= 1")
-        if self.n_hsp > len(HSP_NAMES):
-            raise ValueError(f"n_hsp must be <= {len(HSP_NAMES)} ({HSP_NAMES})")
 
 
 def place_base_stations(n_bs: int, area_m: float) -> np.ndarray:
@@ -222,8 +230,8 @@ def run_aggregator(cfg: AggregatorConfig | None = None) -> dict[str, Path]:
     g_wk = np.divide(g_wk, np.maximum(n_wk, 1))
     g_wk = np.where(n_wk > 0, g_wk, EPS)
 
-    hsp_names = list(HSP_NAMES[: cfg.n_hsp])
-    bs_names = [f"BS{w + 1}" for w in range(cfg.n_bs)]
+    hsp_names = hsp_labels(cfg.n_hsp)
+    bs_names = bs_labels(cfg.n_bs)
 
     map_df = customers.copy()
     map_df["x_m"] = xy[:, 0]

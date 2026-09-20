@@ -49,7 +49,8 @@ DEFAULT_OUT = ROOT / "data" / "processed" / "reluctance"
 DEFAULT_ARTIFACTS = ROOT / "artifacts" / "reluctance"
 EPS = 1e-12
 FEATURE_NAMES = ("eta", "gamma", "backhaul", "q_nat", "interfer")
-HSP_NAMES = ("HSP1", "HSP2", "HSP3")
+def _hsp_name(j: int) -> str:
+    return f"HSP{int(j) + 1}"
 
 # a: +load, −quality, +backhaul, +native-QoS-degradation, +interference
 WEIGHT_A = np.array([1.35, -1.55, 0.95, 1.05, 0.90], dtype=np.float64)
@@ -280,7 +281,7 @@ def _rows_table(xi: np.ndarray, star: np.ndarray, hat: np.ndarray | None, split_
                     "split": str(split_name[s]),
                     "bs": i,
                     "hsp": j,
-                    "hsp_name": HSP_NAMES[j] if j < len(HSP_NAMES) else str(j),
+                    "hsp_name": _hsp_name(j),
                     "omega_star": float(star[s, i, j]),
                 }
                 for f, name in enumerate(FEATURE_NAMES):

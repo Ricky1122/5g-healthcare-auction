@@ -32,8 +32,6 @@ from src import load_step
 DEFAULT_PROCESSED = ROOT / "data" / "processed"
 DEFAULT_FIGDIR = ROOT / "artifacts" / "figures"
 EPS = 1e-12
-HSP_PAPER = ("HSP1", "HSP2", "HSP3")
-BS_PAPER = ("BS1", "BS2", "BS3", "BS4")
 ALPHAS = (0.50, 0.75, 1.00, 1.25, 1.50, 2.00)
 STEMS = (
     "fig6_preference_criticality",
@@ -41,11 +39,36 @@ STEMS = (
     "fig8_preference_vs_payment",
 )
 
-HSP_COLOR = ("#2ca02c", "#1f77b4", "#d62728")
-BS_COLOR = ("#2ca02c", "#d62728", "#1f77b4", "#9467bd")
-HSP_MARKER = ("+", "o", "x")
-BS_MARKER = ("+", "x", "o", "s")
-HATCH = ("", "//", "\\\\", "xx")
+_HSP_COLOR_BASE = (
+    "#2ca02c", "#1f77b4", "#d62728", "#9467bd", "#ff7f0e",
+    "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf",
+)
+_BS_COLOR_BASE = ("#2ca02c", "#d62728", "#1f77b4", "#9467bd", "#ff7f0e")
+HSP_MARKER = ("+", "o", "x", "s", "v")
+BS_MARKER = ("+", "x", "o", "s", "v")
+HATCH = ("", "//", "\\\\", "xx", "..")
+
+
+def _hsp(j: int) -> str:
+    return f"HSP{int(j) + 1}"
+
+
+def _bs(i: int) -> str:
+    return f"BS{int(i) + 1}"
+
+
+def _hsp_colors(n: int) -> list:
+    if n <= len(_HSP_COLOR_BASE):
+        return list(_HSP_COLOR_BASE[:n])
+    cmap = plt.get_cmap("tab20")
+    return [cmap(i % 20) for i in range(n)]
+
+
+def _bs_colors(n: int) -> list:
+    if n <= len(_BS_COLOR_BASE):
+        return list(_BS_COLOR_BASE[:n])
+    cmap = plt.get_cmap("tab10")
+    return [cmap(i % 10) for i in range(n)]
 
 
 def _ieee_rc() -> None:
@@ -140,51 +163,62 @@ def _load_cleared(processed_dir: Path, clearing_dir: Path | None = None) -> dict
 
 def fig_preference_anatomy(data: dict, figdir: Path) -> None:
     n_bs, n_hsp = data["rho"].shape
-    x = np.arange(n_hsp)
-    width = 0.18
+    hsp_cols = _hsp_colors(n_bs)
     panels = (
         (data["c_wk"], "Criticality mass $C_{wk}$"),
         (data["mean_c"], "Mean criticality $\\bar{A}_{wk}$"),
         (data["rho"], r"Preference $\rho_{wk}$"),
     )
-    fig, axes = plt.subplots(1, 3, figsize=(8.8, 3.45), sharex=True)
-    for ax, (mat, ylabel) in zip(axes, panels):
-        for i in range(n_bs):
-            ax.bar(
-                x + (i - (n_bs - 1) / 2) * width,
-                mat[i],
-                width,
-                label=BS_PAPER[i],
-                color=BS_COLOR[i],
-                edgecolor="k",
-                linewidth=0.4,
-                hatch=HATCH[i],
-            )
-        ax.set_xticks(x, HSP_PAPER[:n_hsp])
-        ax.set_ylabel(ylabel)
-        if "Mean" in ylabel:
-            lo = float(mat.min())
-            hi = float(mat.max())
-            pad = 0.18 * max(hi - lo, 1e-3)
-            ax.set_ylim(lo - pad, hi + pad)
-        else:
-            hi = float(np.nanmax(mat))
-            ax.set_ylim(0.0, 1.18 * max(hi, 1e-9))
-    handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(
-        handles,
-        labels,
-        loc="upper center",
-        ncol=n_bs,
-        fontsize=7,
-        framealpha=0.95,
-        bbox_to_anchor=(0.5, 1.04),
-        handlelength=1.6,
-    )
-    axes[0].set_xlabel("HSP")
-    axes[1].set_xlabel("HSP")
-    axes[2].set_xlabel("HSP")
-    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.93))
+    if n_hsp <= 5 and n_bs <= 3:
+        x = np.arange(n_hsp)
+        width = 0.72 / max(n_bs, 1)
+        fig, axes = plt.subplots(1, 3, figsize=(8.8, 3.45), sharex=True)
+        for ax, (mat, ylabel) in zip(axes, panels):
+            for i in range(n_bs):
+                ax.bar(
+                    x + (i - (n_bs - 1) / 2) * width,
+                    mat[i],
+                    width,
+                    label=_bs(i),
+                    color=hsp_cols[i],
+                    edgecolor="k",
+                    linewidth=0.4,
+                    hatch=HATCH[i % len(HATCH)],
+                )
+            ax.set_xticks(x, [_hsp(j) for j in range(n_hsp)])
+            ax.set_ylabel(ylabel)
+            if "Mean" in ylabel:
+                lo = float(mat.min())
+                hi = float(mat.max())
+                pad = 0.18 * max(hi - lo, 1e-3)
+                ax.set_ylim(lo - pad, hi + pad)
+            else:
+                hi = float(np.nanmax(mat))
+                ax.set_ylim(0.0, 1.18 * max(hi, 1e-9))
+        handles, labels = axes[0].get_legend_handles_labels()
+        fig.legend(
+            handles,
+            labels,
+            loc="upper center",
+            ncol=n_bs,
+            fontsize=7,
+            framealpha=0.95,
+            bbox_to_anchor=(0.5, 1.04),
+            handlelength=1.6,
+        )
+        axes[0].set_xlabel("HSP")
+        axes[1].set_xlabel("HSP")
+        axes[2].set_xlabel("HSP")
+        fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.93))
+    else:
+        fig, axes = plt.subplots(1, 3, figsize=(10.6, max(3.2, 0.38 * n_bs + 1.6)))
+        for ax, (mat, ylabel) in zip(axes, panels):
+            im = ax.imshow(mat, aspect="auto", cmap="viridis")
+            ax.set_xticks(np.arange(n_hsp), [_hsp(j) for j in range(n_hsp)], rotation=45, ha="right")
+            ax.set_yticks(np.arange(n_bs), [_bs(i) for i in range(n_bs)])
+            ax.set_title(ylabel, fontsize=9)
+            fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+        fig.tight_layout()
     _save(fig, figdir, STEMS[0])
 
 
@@ -192,15 +226,19 @@ def fig_payments_surplus(data: dict, figdir: Path) -> None:
     n_bs, n_hsp = data["pay"].shape
     hsp_pay = data["pay"].sum(axis=0)
     bs_pay = data["pay"].sum(axis=1)
-    fig, axes = plt.subplots(1, 2, figsize=(8.6, 3.55))
+    hsp_c = _hsp_colors(n_hsp)
+    bs_c = _bs_colors(n_bs)
+    fig, axes = plt.subplots(1, 2, figsize=(max(8.6, 0.42 * (n_hsp + n_bs) + 4.5), 3.55))
 
     ax = axes[0]
     hsp_x = np.arange(n_hsp)
     bs_x = np.arange(n_hsp + 1, n_hsp + 1 + n_bs)
-    ax.bar(hsp_x, hsp_pay, color=list(HSP_COLOR[:n_hsp]), edgecolor="k", linewidth=0.4, label="HSP outlay")
-    ax.bar(bs_x, bs_pay, color=list(BS_COLOR[:n_bs]), edgecolor="k", linewidth=0.4, hatch="//", label="BS receipt")
+    ax.bar(hsp_x, hsp_pay, color=hsp_c, edgecolor="k", linewidth=0.4, label="HSP outlay")
+    ax.bar(bs_x, bs_pay, color=bs_c, edgecolor="k", linewidth=0.4, hatch="//", label="BS receipt")
     ax.axvline(n_hsp - 0.5 + 0.5, color="0.55", linewidth=0.8, linestyle=":")
-    ax.set_xticks(list(hsp_x) + list(bs_x), list(HSP_PAPER[:n_hsp]) + list(BS_PAPER[:n_bs]), rotation=0)
+    tick_labels = [_hsp(j) for j in range(n_hsp)] + [_bs(i) for i in range(n_bs)]
+    rot = 45 if (n_hsp + n_bs) > 8 else 0
+    ax.set_xticks(list(hsp_x) + list(bs_x), tick_labels, rotation=rot, ha="right" if rot else "center")
     ax.set_ylabel(r"Payment $\pi_{wk}\,x_{wk}$")
     ax.legend(loc="upper right", framealpha=0.92)
     total = float(hsp_pay.sum())
@@ -214,15 +252,15 @@ def fig_payments_surplus(data: dict, figdir: Path) -> None:
     )
 
     ax = axes[1]
-    labels = list(HSP_PAPER[:n_hsp]) + list(BS_PAPER[:n_bs])
+    labels = [_hsp(j) for j in range(n_hsp)] + [_bs(i) for i in range(n_bs)]
     values = np.concatenate([data["util"], data["profit"]])
-    colors = list(HSP_COLOR[:n_hsp]) + list(BS_COLOR[:n_bs])
+    colors = hsp_c + bs_c
     hatches = [""] * n_hsp + ["//"] * n_bs
     bars = ax.bar(np.arange(len(values)), values, color=colors, edgecolor="k", linewidth=0.4)
     for bar, h in zip(bars, hatches):
         bar.set_hatch(h)
     ax.axhline(0.0, color="k", linewidth=0.7, alpha=0.55)
-    ax.set_xticks(np.arange(len(values)), labels)
+    ax.set_xticks(np.arange(len(values)), labels, rotation=rot, ha="right" if rot else "center")
     ax.set_ylabel("Surplus")
     wel = data["welfare"]
     leftover = float(hsp_pay.sum() - bs_pay.sum())
@@ -306,7 +344,7 @@ def _rho_sweep(
             rate[a_i, j] = rec["x"][:, j].sum()
             unit[a_i, j] = rec["pay"][:, j].sum() / max(rec["x"][:, j].sum(), EPS)
             print(
-                f"[econ] scale {HSP_PAPER[j]}  alpha={alpha:.2f}  "
+                f"[econ] scale {_hsp(j)}  alpha={alpha:.2f}  "
                 f"pay={pay[a_i, j]:.3f}  rate={rate[a_i, j]:.2f}  gap={rec['gap']:.3e}"
             )
     return {"alpha": np.asarray(ALPHAS), "pay": pay, "rate": rate, "unit": unit}
@@ -314,20 +352,30 @@ def _rho_sweep(
 
 def fig_preference_payment(data: dict, sweep: dict, figdir: Path) -> None:
     n_bs, n_hsp = data["rho"].shape
-    fig = plt.figure(figsize=(8.8, 7.0))
-    gs = GridSpec(2, 2, height_ratios=(1.0, 1.05), hspace=0.38, wspace=0.32, top=0.97, bottom=0.16)
-
-    ax_rate = fig.add_subplot(gs[0, 0])
-    ax_pay = fig.add_subplot(gs[0, 1])
-    ax_sens = fig.add_subplot(gs[1, :])
+    hsp_c = _hsp_colors(n_hsp)
+    compact = n_hsp <= 3
+    if compact:
+        fig = plt.figure(figsize=(8.8, 7.0))
+        gs = GridSpec(2, 2, height_ratios=(1.0, 1.05), hspace=0.38, wspace=0.32, top=0.97, bottom=0.16)
+        ax_rate = fig.add_subplot(gs[0, 0])
+        ax_pay = fig.add_subplot(gs[0, 1])
+        ax_sens = fig.add_subplot(gs[1, :])
+    else:
+        fig = plt.figure(figsize=(9.2, 7.4))
+        gs = GridSpec(2, 2, height_ratios=(1.0, 1.05), hspace=0.38, wspace=0.30, top=0.96, bottom=0.10)
+        ax_rate = fig.add_subplot(gs[0, 0])
+        ax_pay = fig.add_subplot(gs[0, 1])
+        ax_sens = fig.add_subplot(gs[1, 0])
+        ax_rate_only = fig.add_subplot(gs[1, 1])
 
     for j in range(n_hsp):
+        color = hsp_c[j] if compact else plt.cm.viridis(j / max(n_hsp - 1, 1))
         for i in range(n_bs):
             ax_rate.scatter(
                 data["rho"][i, j],
                 data["rate"][i, j],
-                color=HSP_COLOR[j],
-                marker=BS_MARKER[i],
+                color=color,
+                marker=BS_MARKER[i % len(BS_MARKER)],
                 s=42,
                 linewidths=1.05,
                 zorder=3,
@@ -335,8 +383,8 @@ def fig_preference_payment(data: dict, sweep: dict, figdir: Path) -> None:
             ax_pay.scatter(
                 data["rho"][i, j],
                 data["pay"][i, j],
-                color=HSP_COLOR[j],
-                marker=BS_MARKER[i],
+                color=color,
+                marker=BS_MARKER[i % len(BS_MARKER)],
                 s=42,
                 linewidths=1.05,
                 zorder=3,
@@ -347,64 +395,85 @@ def fig_preference_payment(data: dict, sweep: dict, figdir: Path) -> None:
     ax_rate.set_ylabel("Cleared rate $x_{wk}$ (Mbps)")
     ax_pay.set_xlabel(r"Preference $\rho_{wk}$")
     ax_pay.set_ylabel(r"Payment $\pi_{wk} x_{wk}$")
-    hsp_handles = [
-        Line2D(
-            [0], [0], marker="o", color="none", markerfacecolor=HSP_COLOR[j],
-            markeredgecolor=HSP_COLOR[j], markersize=6, label=HSP_PAPER[j],
-        )
-        for j in range(n_hsp)
-    ]
+    if compact:
+        hsp_handles = [
+            Line2D(
+                [0], [0], marker="o", color="none", markerfacecolor=hsp_c[j],
+                markeredgecolor=hsp_c[j], markersize=6, label=_hsp(j),
+            )
+            for j in range(n_hsp)
+        ]
+        ax_rate.legend(handles=hsp_handles, fontsize=7, framealpha=0.95, loc="lower right")
+    else:
+        sm = plt.cm.ScalarMappable(cmap=plt.cm.viridis, norm=plt.Normalize(1, n_hsp))
+        sm.set_array([])
+        fig.colorbar(sm, ax=[ax_rate, ax_pay], fraction=0.03, pad=0.02, label="HSP index")
     bs_handles = [
         Line2D(
-            [0], [0], marker=BS_MARKER[i], color="0.25", linestyle="none",
-            markersize=6, label=BS_PAPER[i],
+            [0], [0], marker=BS_MARKER[i % len(BS_MARKER)], color="0.25", linestyle="none",
+            markersize=6, label=_bs(i),
         )
         for i in range(n_bs)
     ]
-    ax_rate.legend(handles=hsp_handles, fontsize=7, framealpha=0.95, loc="lower right")
-    ax_pay.legend(handles=bs_handles, fontsize=7, framealpha=0.95, loc="lower right")
+    ax_pay.legend(handles=bs_handles, fontsize=7, framealpha=0.95, loc="lower right", ncol=1 if n_bs <= 3 else 2)
 
-    ax_rate2 = ax_sens.twinx()
-    ax_rate2.grid(False)
-    for j in range(n_hsp):
-        ax_sens.plot(
-            sweep["alpha"],
-            sweep["pay"][:, j],
-            color=HSP_COLOR[j],
-            marker=HSP_MARKER[j],
-            linestyle="-",
-            linewidth=1.6,
-            markersize=6,
-            label=f"{HSP_PAPER[j]} payment",
+    if compact:
+        ax_rate2 = ax_sens.twinx()
+        ax_rate2.grid(False)
+        for j in range(n_hsp):
+            ax_sens.plot(
+                sweep["alpha"],
+                sweep["pay"][:, j],
+                color=hsp_c[j],
+                marker=HSP_MARKER[j % len(HSP_MARKER)],
+                linestyle="-",
+                linewidth=1.6,
+                markersize=6,
+                label=f"{_hsp(j)} payment",
+            )
+            ax_rate2.plot(
+                sweep["alpha"],
+                sweep["rate"][:, j],
+                color=hsp_c[j],
+                marker=HSP_MARKER[j % len(HSP_MARKER)],
+                linestyle="--",
+                linewidth=1.2,
+                markersize=5,
+                alpha=0.85,
+                label=f"{_hsp(j)} rate",
+            )
+        ax_sens.axvline(1.0, color="0.5", linestyle=":", linewidth=0.9)
+        ax_sens.set_xlabel(r"Preference scale $\alpha$  ($\rho_{w\cdot}\leftarrow\alpha\rho_{w\cdot}$, others fixed)")
+        ax_sens.set_ylabel("HSP outlay")
+        ax_rate2.set_ylabel("HSP rate (Mbps)")
+        ax_sens.xaxis.set_major_locator(MaxNLocator(nbins=6))
+        h1, l1 = ax_sens.get_legend_handles_labels()
+        h2, l2 = ax_rate2.get_legend_handles_labels()
+        ax_sens.legend(
+            h1 + h2,
+            l1 + l2,
+            ncol=3,
+            fontsize=7,
+            loc="upper center",
+            bbox_to_anchor=(0.5, -0.22),
+            framealpha=0.95,
+            handlelength=2.2,
         )
-        ax_rate2.plot(
-            sweep["alpha"],
-            sweep["rate"][:, j],
-            color=HSP_COLOR[j],
-            marker=HSP_MARKER[j],
-            linestyle="--",
-            linewidth=1.2,
-            markersize=5,
-            alpha=0.85,
-            label=f"{HSP_PAPER[j]} rate",
-        )
-    ax_sens.axvline(1.0, color="0.5", linestyle=":", linewidth=0.9)
-    ax_sens.set_xlabel(r"Preference scale $\alpha$  ($\rho_{w\cdot}\leftarrow\alpha\rho_{w\cdot}$, others fixed)")
-    ax_sens.set_ylabel("HSP outlay")
-    ax_rate2.set_ylabel("HSP rate (Mbps)")
-    ax_sens.xaxis.set_major_locator(MaxNLocator(nbins=6))
-    h1, l1 = ax_sens.get_legend_handles_labels()
-    h2, l2 = ax_rate2.get_legend_handles_labels()
-    ax_sens.legend(
-        h1 + h2,
-        l1 + l2,
-        ncol=3,
-        fontsize=7,
-        loc="upper center",
-        bbox_to_anchor=(0.5, -0.22),
-        framealpha=0.95,
-        handlelength=2.2,
-    )
+    else:
+        cmap = plt.cm.viridis
+        for j in range(n_hsp):
+            color = cmap(j / max(n_hsp - 1, 1))
+            ax_sens.plot(sweep["alpha"], sweep["pay"][:, j], color=color, linewidth=1.4)
+            ax_rate_only.plot(sweep["alpha"], sweep["rate"][:, j], color=color, linewidth=1.4)
+        ax_sens.axvline(1.0, color="0.5", linestyle=":", linewidth=0.9)
+        ax_rate_only.axvline(1.0, color="0.5", linestyle=":", linewidth=0.9)
+        ax_sens.set_xlabel(r"Preference scale $\alpha$")
+        ax_rate_only.set_xlabel(r"Preference scale $\alpha$")
+        ax_sens.set_ylabel("HSP outlay")
+        ax_rate_only.set_ylabel("HSP rate (Mbps)")
+        sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(1, n_hsp))
+        sm.set_array([])
+        fig.colorbar(sm, ax=[ax_sens, ax_rate_only], fraction=0.03, pad=0.03, label="HSP index")
 
     _save(fig, figdir, STEMS[2])
 
@@ -433,7 +502,7 @@ def generate_economic_figures(
     sweep = _rho_sweep(processed_dir, max_iter=max_iter, seed=seed, omega_path=omega_path)
     fig_preference_payment(data, sweep, figdir)
     payload = {
-        "hsp_map": {HSP_PAPER[j]: data["hsp_names"][j] for j in range(len(data["hsp_names"]))},
+        "hsp_map": {name: name for name in data["hsp_names"]},
         "hsp_outlay": data["pay"].sum(axis=0).tolist(),
         "bs_receipt": data["pay"].sum(axis=1).tolist(),
         "buyer_surplus": data["util"].tolist(),

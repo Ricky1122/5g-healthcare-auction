@@ -38,17 +38,49 @@ DEFAULT_FIGDIR = ROOT / "artifacts" / "figures"
 EPS = 1e-12
 DELTAS = (0.034, 0.040, 0.046)
 FIG345_DELTA = 0.040
+FIG3_ITERS = 300  # visual crop only; trajectories are unchanged
 AXIS_ITERS = 80
 R_BID_FLOOR = 1e-3  # Mbps; zeta = c/r + beta is singular at r = 0
-HSP_PAPER = ("HSP1", "HSP2", "HSP3")
-BS_PAPER = ("BS1", "BS2", "BS3", "BS4")
 LINESTYLES = ("-", "--", "-.", ":")
+
+
+def _hsp(j: int) -> str:
+    return f"HSP{int(j) + 1}"
+
+
+def _bs(i: int) -> str:
+    return f"BS{i + 1}"
+
+
+def _axes_grid(
+    n: int,
+    max_cols: int,
+    cell_w: float,
+    cell_h: float,
+    sharex: bool = True,
+    sharey: bool = True,
+):
+    n = max(int(n), 1)
+    cols = min(max(int(max_cols), 1), n)
+    rows = int(np.ceil(n / cols))
+    fig, axes = plt.subplots(
+        rows,
+        cols,
+        figsize=(cell_w * cols, cell_h * rows),
+        sharex=sharex,
+        sharey=sharey,
+    )
+    axes = np.atleast_1d(axes).ravel()
+    for ax in axes[n:]:
+        ax.set_visible(False)
+        ax.set_axis_off()
+    return fig, axes[:n]
 
 DELTA_STYLE = {
     0.004: dict(color="#2ca02c", marker="+", linestyle="-", label=r"$\Delta=0.004$"),
     0.006: dict(color="#8c564b", marker="v", linestyle="--", label=r"$\Delta=0.006$"),
     0.008: dict(color="#1f77b4", marker="o", linestyle="-.", label=r"$\Delta=0.008$"),
-    0.01: dict(color="#2ca02c", marker="+", linestyle="-", label=r"$\Delta=0.010$"),
+    0.01: dict(color="#2ca02c", marker="+", linestyle="-", label=r"$\Delta=0.01$"),
     0.012: dict(color="#2ca02c", marker="+", linestyle="-", label=r"$\Delta=0.012$"),
     0.015: dict(color="#2ca02c", marker="+", linestyle="-", label=r"$\Delta=0.015$"),
     0.018: dict(color="#2ca02c", marker="+", linestyle="-", label=r"$\Delta=0.018$"),
@@ -58,11 +90,11 @@ DELTA_STYLE = {
     0.034: dict(color="#2ca02c", marker="+", linestyle="-", label=r"$\Delta=0.034$"),
     0.035: dict(color="#8c564b", marker="v", linestyle="--", label=r"$\Delta=0.035$"),
     0.038: dict(color="#8c564b", marker="v", linestyle="--", label=r"$\Delta=0.038$"),
-    0.04: dict(color="#8c564b", marker="v", linestyle="--", label=r"$\Delta=0.040$"),
+    0.04: dict(color="#1f77b4", marker="o", linestyle="-.", label=r"$\Delta=0.04$"),
     0.046: dict(color="#1f77b4", marker="o", linestyle="-.", label=r"$\Delta=0.046$"),
     0.05: dict(color="#1f77b4", marker="o", linestyle="-.", label=r"$\Delta=0.050$"),
     0.055: dict(color="#1f77b4", marker="o", linestyle="-.", label=r"$\Delta=0.055$"),
-    0.02: dict(color="#2ca02c", marker="+", linestyle="-", label=r"$\Delta=0.02$"),
+    0.02: dict(color="#8c564b", marker="v", linestyle="--", label=r"$\Delta=0.02$"),
     0.06: dict(color="#1f77b4", marker="o", linestyle="-.", label=r"$\Delta=0.06$"),
     0.07: dict(color="#1f77b4", marker="o", linestyle="-.", label=r"$\Delta=0.070$"),
     0.075: dict(color="#1f77b4", marker="o", linestyle="-.", label=r"$\Delta=0.075$"),
@@ -81,11 +113,14 @@ BS_STYLE = (
     dict(color="#d62728", marker="x", linestyle="--"),
     dict(color="#1f77b4", marker="o", linestyle="-."),
     dict(color="#9467bd", marker="s", linestyle=":"),
+    dict(color="#ff7f0e", marker="v", linestyle="-"),
 )
 HSP_STYLE = (
     dict(color="#2ca02c", marker="+", linestyle="-"),
     dict(color="#1f77b4", marker="o", linestyle="--"),
     dict(color="#d62728", marker="x", linestyle="-."),
+    dict(color="#9467bd", marker="s", linestyle=":"),
+    dict(color="#ff7f0e", marker="v", linestyle="-"),
 )
 
 
@@ -145,9 +180,10 @@ def _tick_step(xmax: int) -> int:
     return 50
 
 
-def _iter_axis(ax) -> None:
-    ax.set_xlim(0, AXIS_ITERS)
-    ax.xaxis.set_major_locator(MultipleLocator(_tick_step(AXIS_ITERS)))
+def _iter_axis(ax, xmax: int | None = None, tick: int | None = None) -> None:
+    xmax = int(AXIS_ITERS if xmax is None else xmax)
+    ax.set_xlim(0, xmax)
+    ax.xaxis.set_major_locator(MultipleLocator(tick if tick is not None else _tick_step(xmax)))
 
 
 def _legend(ax, loc: str = "upper right", **kwargs) -> None:
@@ -365,49 +401,77 @@ def fig_convergence(
     _save(fig, figdir, "fig2_convergence")
 
 
+def _gap_trace_style(index: int) -> dict:
+    style = _trace_style(BS_STYLE[index % len(BS_STYLE)], index)
+    style["markevery"] = (12, 25)
+    style["markersize"] = 5.0
+    return style
+
+
+def _gap_ylim(series: list, n_show: int) -> tuple[float, float]:
+    """Zoom onto the approach to zero; one-sample cold-start spikes stay off-axis."""
+    body = np.concatenate([np.asarray(g, dtype=np.float64)[5:n_show] for g in series])
+    lo, hi = float(np.min(body)), float(np.max(body))
+    span = max(hi - lo, 0.25)
+    return lo - 0.12 * span, hi + 0.16 * span
+
+
+def _gap_show_len(tr: dict) -> int:
+    n_show = min(int(FIG3_ITERS), int(tr["n"]))
+    n_show = max(n_show, min(int(AXIS_ITERS), int(tr["n"])))
+    return max(n_show, 20)
+
+
 def fig_gap(traj: dict, figdir: Path, n_hsp_panels: int = 2) -> None:
     tr = _pick_trace(traj)
     n_bs, n_hsp = tr["d"].shape[1], tr["d"].shape[2]
-    n_hsp_panels = min(n_hsp_panels, n_hsp)
-    fig, axes = plt.subplots(1, n_hsp_panels, figsize=(5.8, 3.5), sharey=True)
-    if n_hsp_panels == 1:
-        axes = [axes]
+    n_show = _gap_show_len(tr)
     it = np.arange(1, tr["n"] + 1)
-    for j, ax in enumerate(axes):
-        for i in range(n_bs):
-            g = tr["d"][:, i, j] - tr["r"][:, i, j]
-            ax.plot(
-                it,
-                g,
-                label=f"{HSP_PAPER[j]}-{BS_PAPER[i]}",
-                **_trace_style(BS_STYLE[i % len(BS_STYLE)], i),
-            )
-        ax.axhline(0.0, color="k", linewidth=0.7, alpha=0.55)
-        ax.set_xlabel("iteration")
-        _iter_axis(ax)
-        _legend(ax, loc="lower right", fontsize=6.5)
-    axes[0].set_ylabel("Demand and response gap")
-    fig.tight_layout()
-    _save(fig, figdir, "fig3_demand_response_gap")
+    all_gaps = [tr["d"][:, i, j] - tr["r"][:, i, j] for j in range(n_hsp) for i in range(n_bs)]
+    ylim = _gap_ylim(all_gaps, n_show)
+    tick = 50 if n_show >= 150 else None
 
-    fig, axes = plt.subplots(1, n_hsp, figsize=(8.8, 3.5), sharey=True)
-    if n_hsp == 1:
-        axes = [axes]
+    if n_hsp <= 3:
+        n_hsp_panels = min(n_hsp_panels, n_hsp)
+        fig, axes = plt.subplots(1, n_hsp_panels, figsize=(6.8, 3.8), sharey=True)
+        axes = np.atleast_1d(axes).ravel()
+        for j, ax in enumerate(axes):
+            for i in range(n_bs):
+                g = tr["d"][:, i, j] - tr["r"][:, i, j]
+                ax.plot(
+                    it,
+                    g,
+                    label=f"{_hsp(j)}-{_bs(i)}",
+                    **_gap_trace_style(i),
+                )
+            ax.axhline(0.0, color="k", linewidth=0.7, alpha=0.55)
+            ax.set_xlabel("iteration")
+            ax.set_ylim(*ylim)
+            _iter_axis(ax, xmax=n_show, tick=tick)
+            _legend(ax, loc="lower right", fontsize=6.5)
+        axes[0].set_ylabel("Demand and response gap")
+        fig.tight_layout()
+        _save(fig, figdir, "fig3_demand_response_gap")
+
+    max_cols = 3 if n_hsp <= 6 else 5
+    fig, axes = _axes_grid(n_hsp, max_cols, 3.35, 3.15)
     for j, ax in enumerate(axes):
         for i in range(n_bs):
             g = tr["d"][:, i, j] - tr["r"][:, i, j]
             ax.plot(
                 it,
                 g,
-                label=BS_PAPER[i],
-                **_trace_style(BS_STYLE[i % len(BS_STYLE)], i),
+                label=_bs(i),
+                **_gap_trace_style(i),
             )
         ax.axhline(0.0, color="k", linewidth=0.7, alpha=0.55)
         ax.set_xlabel("iteration")
-        _iter_axis(ax)
+        ax.set_title(_hsp(j), fontsize=9)
+        ax.set_ylim(*ylim)
+        _iter_axis(ax, xmax=n_show, tick=tick)
     axes[0].set_ylabel("Demand and response gap")
-    _figure_legend(fig, axes[0], ncol=n_bs)
-    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.92))
+    _figure_legend(fig, axes[0], ncol=min(n_bs, 5))
+    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.90))
     _save(fig, figdir, "fig3_demand_response_gap_all")
 
 
@@ -415,22 +479,32 @@ def fig_bs_bids(traj: dict, figdir: Path) -> None:
     tr = _pick_trace(traj)
     n_bs, n_hsp = tr["zeta"].shape[1], tr["zeta"].shape[2]
     it = np.arange(1, tr["n"] + 1)
-    fig, axes = plt.subplots(1, n_bs, figsize=(2.9 * n_bs, 3.5), sharex=True)
-    axes = np.atleast_1d(axes).ravel()
-    for i in range(n_bs):
-        ax = axes[i]
+    max_cols = 3 if n_bs >= 3 else n_bs
+    fig, axes = _axes_grid(n_bs, max_cols, 3.2, 3.35, sharey=False)
+    named = n_hsp <= 4
+    cmap = plt.cm.viridis
+    for i, ax in enumerate(axes):
         for j in range(n_hsp):
-            ax.plot(
-                it,
-                tr["zeta"][:, i, j],
-                label=HSP_PAPER[j],
-                **_trace_style(HSP_STYLE[j % len(HSP_STYLE)], j),
-            )
+            if named:
+                style = _trace_style(HSP_STYLE[j % len(HSP_STYLE)], j)
+                style["label"] = _hsp(j)
+            else:
+                style = _trace_style(HSP_STYLE[j % len(HSP_STYLE)], j)
+                style["color"] = cmap(j / max(n_hsp - 1, 1))
+                style["label"] = None
+            ax.plot(it, tr["zeta"][:, i, j], **style)
+        ax.set_title(_bs(i), fontsize=9)
         ax.set_ylabel("BSs Bids")
         ax.set_xlabel("iteration")
         _iter_axis(ax)
-    _figure_legend(fig, axes[0], ncol=n_hsp)
-    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.90))
+    if named:
+        _figure_legend(fig, axes[0], ncol=n_hsp)
+        fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.90))
+    else:
+        sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(1, n_hsp))
+        sm.set_array([])
+        fig.subplots_adjust(right=0.90, top=0.90, wspace=0.28, hspace=0.38)
+        fig.colorbar(sm, ax=list(axes), fraction=0.03, pad=0.04, label="HSP index")
     _save(fig, figdir, "fig4_bs_bids")
 
 
@@ -438,55 +512,68 @@ def fig_hsp_bids(traj: dict, figdir: Path) -> None:
     tr = _pick_trace(traj)
     n_bs, n_hsp = tr["varrho"].shape[1], tr["varrho"].shape[2]
     it = np.arange(1, tr["n"] + 1)
-    fig, axes = plt.subplots(1, n_hsp, figsize=(8.8, 3.5), sharey=False)
-    if n_hsp == 1:
-        axes = [axes]
+    max_cols = 3 if n_hsp <= 6 else 5
+    fig, axes = _axes_grid(n_hsp, max_cols, 3.2, 3.2, sharey=False)
     for j, ax in enumerate(axes):
         for i in range(n_bs):
             ax.plot(
                 it,
                 tr["varrho"][:, i, j],
-                label=BS_PAPER[i],
+                label=_bs(i),
                 **_trace_style(BS_STYLE[i % len(BS_STYLE)], i),
             )
+        ax.set_title(_hsp(j), fontsize=9)
         ax.set_xlabel("iteration")
         _iter_axis(ax)
     axes[0].set_ylabel("HSPs Bids")
-    _figure_legend(fig, axes[0], ncol=n_bs)
+    _figure_legend(fig, axes[0], ncol=min(n_bs, 5))
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.90))
     _save(fig, figdir, "fig5_hsp_bids")
 
 
 def fig_omega_const(omega: np.ndarray, figdir: Path, hsp_names: list[str]) -> None:
     n_bs, n_hsp = omega.shape
-    x = np.arange(n_hsp)
-    width = 0.8 / max(n_bs, 1)
-    fig, ax = plt.subplots(figsize=(5.2, 3.6))
-    for i in range(n_bs):
-        ax.bar(
-            x + (i - (n_bs - 1) / 2) * width,
-            omega[i],
-            width,
-            label=BS_PAPER[i],
-            color=("#2ca02c", "#d62728", "#1f77b4")[i % 3],
-            edgecolor="k",
-            linewidth=0.4,
-        )
-    ax.set_xticks(x, [HSP_PAPER[j] for j in range(n_hsp)])
-    ax.set_xlabel("HSP")
-    ax.set_ylabel(r"Reluctance $\omega_{kw}$ (constant)")
-    ax.set_ylim(0.0, 1.0)
-    ax.legend(fontsize=7, framealpha=0.92)
-    fig.tight_layout()
+    names = list(hsp_names) if hsp_names else [_hsp(j) for j in range(n_hsp)]
+    if n_hsp * n_bs <= 15:
+        x = np.arange(n_hsp)
+        width = 0.8 / max(n_bs, 1)
+        bar_colors = ("#2ca02c", "#d62728", "#1f77b4", "#9467bd", "#ff7f0e")
+        fig, ax = plt.subplots(figsize=(max(5.2, 0.7 * n_hsp + 1.8), 3.6))
+        for i in range(n_bs):
+            ax.bar(
+                x + (i - (n_bs - 1) / 2) * width,
+                omega[i],
+                width,
+                label=_bs(i),
+                color=bar_colors[i % len(bar_colors)],
+                edgecolor="k",
+                linewidth=0.4,
+            )
+        ax.set_xticks(x, names, rotation=0 if n_hsp <= 6 else 45, ha="center" if n_hsp <= 6 else "right")
+        ax.set_xlabel("HSP")
+        ax.set_ylabel(r"Reluctance $\omega_{kw}$ (constant)")
+        ax.set_ylim(0.0, 1.0)
+        ax.legend(fontsize=7, framealpha=0.92, ncol=min(n_bs, 3))
+        fig.tight_layout()
+    else:
+        fig, ax = plt.subplots(figsize=(max(6.4, 0.52 * n_hsp + 1.8), max(3.4, 0.42 * n_bs + 1.4)))
+        im = ax.imshow(omega, vmin=0.0, vmax=1.0, cmap="YlOrRd", aspect="auto")
+        ax.set_xticks(np.arange(n_hsp), names, rotation=45, ha="right")
+        ax.set_yticks(np.arange(n_bs), [_bs(i) for i in range(n_bs)])
+        fontsize = 6 if n_hsp >= 8 else 8
+        for i in range(n_bs):
+            for j in range(n_hsp):
+                ax.text(j, i, f"{omega[i, j]:.2f}", ha="center", va="center", fontsize=fontsize)
+        ax.set_xlabel("HSP")
+        ax.set_ylabel("BS")
+        fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label=r"Reluctance $\omega_{kw}$")
+        fig.tight_layout()
     _save(fig, figdir, "fig_omega_const")
 
 
 def persist_arrays(traj: dict[float, dict], figdir: Path, hsp_names: list[str]) -> None:
     payload = {
-        "hsp_map": {
-            HSP_PAPER[j]: hsp_names[j] if j < len(hsp_names) else HSP_PAPER[j]
-            for j in range(min(len(HSP_PAPER), len(hsp_names)))
-        },
+        "hsp_map": {name: name for name in hsp_names},
         "deltas": [float(x) for x in traj.keys()],
     }
     for delta, tr in traj.items():
@@ -541,13 +628,19 @@ def generate_figures(
             f"SW={tr['sw_matched'][-1]:.3f}  gap={tr['gap'][-1]:.3e}"
         )
     global AXIS_ITERS, FIG345_DELTA
-    if fig345_delta is not None:
-        FIG345_DELTA = float(fig345_delta)
-    elif FIG345_DELTA not in traj:
-        FIG345_DELTA = used[len(used) // 2]
+    preferred = float(fig345_delta) if fig345_delta is not None else float(FIG345_DELTA)
+    if preferred in traj and float(traj[preferred]["gap"][-1]) < 1e-2:
+        FIG345_DELTA = preferred
+    else:
+        FIG345_DELTA = min(traj, key=lambda d: float(traj[d]["gap"][-1]))
+        if preferred != FIG345_DELTA:
+            print(
+                f"[figures] fig3-5 using Delta={FIG345_DELTA:g} "
+                f"(preferred {preferred:g} still open)"
+            )
     official = _official_welfare(processed_dir)
     sw_end = _sw_axis_end(traj, official)
-    gap_end = _axis_end(traj)
+    gap_end = _axis_end({FIG345_DELTA: traj[FIG345_DELTA]})
     _ieee_rc()
     AXIS_ITERS = sw_end
     print(f"[figures] fig2 axis 0-{AXIS_ITERS}  (markers every {_mark_period()})")

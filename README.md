@@ -5,7 +5,7 @@ B.Tech project pipeline that couples **LSTM vital-sign forecasting** with a **ga
 **Paper 1 (current):** eICU-CRD Demo, LSTM + NEWS2 fusion, **max-normalized** ρ, **constant reluctance** from one radio snapshot, **r_k^max = 5 Mbps** per cell.
 
 - Draft 2 HSP × 3 BS tables: `data/processed_w2k3/`, `report/main.tex`.
-- Final 3 HSP × 2 BS market and figures: `final result/` (official split **5:4:3**, so preference sits in high / mid / low bands).
+- Final topology markets and figures: `3x2 experiment/`, `5x3 experiment/`, `10x5 experiment/` (HSP × BS). The 3×2 official split is **5:4:3**.
 
 Time-varying (dynamic) reluctance is **not** in this repository.
 
@@ -73,7 +73,7 @@ cleared rates, prices, payments, per-patient d_n
 
 Default source is the open-access **[eICU-CRD Demo v2.0.1](https://physionet.org/content/eicu-crd-demo/2.0.1/)**. `src/01_preprocess.py` downloads it into `data/eicu/` (gitignored). The full credentialed eICU-CRD can be dropped in the same folder.
 
-Do not commit raw PhysioNet CSVs or LSTM checkpoints (`*.pt`). Small cleared W×K tables live in `data/processed_w2k3/` and `final result/`.
+Do not commit raw PhysioNet CSVs or LSTM checkpoints (`*.pt`). Small cleared W×K tables live in `data/processed_w2k3/` and the `3x2 experiment/` / `5x3 experiment/` / `10x5 experiment/` folders.
 
 
 | Property       | Value                                                                       |
@@ -321,11 +321,12 @@ Paper-1 market tables (eICU already fused; skip LSTM if `processed_w2k3` exists)
 .\.venv\Scripts\python src\08_economic_figures.py --processed-dir data\processed_w2k3 --figdir artifacts\w2k3\figures --omega-path data\processed_w2k3\reluctance\omega_frozen.npz
 ```
 
-3 HSP × 2 BS market (writes `final result/` only; does not overwrite paper-1 `data/processed_w2k3`).
-Official patient split is **5:4:3**:
+3 HSP × 2 BS, 5 HSP × 3 BS, and 10 HSP × 5 BS markets (writes `3x2 experiment/`, `5x3 experiment/`, `10x5 experiment/`; does not overwrite paper-1 `data/processed_w2k3`).
+Official 3×2 patient split is **5:4:3**. Fig. 2 uses Δ ∈ {0.01, 0.02, 0.04, 0.08}:
 
 ```bash
 .\.venv\Scripts\python src\11_w3k2_final.py
+.\.venv\Scripts\python src\11_w3k2_final.py --only 5x3
 ```
 
 ---
@@ -337,7 +338,9 @@ Official patient split is **5:4:3**:
 ```
 5g-healthcare-auction/
 ├── data/processed_w2k3/    paper-1 W=2 K=3 tables (ρ, frozen ω, clearing)
-├── final result/           3 HSP × 2 BS figures and small market tables
+├── 3x2 experiment/         3 HSP × 2 BS figures and small market tables
+├── 5x3 experiment/         5 HSP × 3 BS figures and small market tables
+├── 10x5 experiment/        10 HSP × 5 BS figures and small market tables
 ├── src/                    preprocess → LSTM → fusion → aggregate → auction
 ├── report/                 IEEE draft + bid-privacy memo
 ├── main.py
